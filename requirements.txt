@@ -1,0 +1,3 @@
+# this only needs the requirements; other libbys are built in
+
+redis==6.4.0
