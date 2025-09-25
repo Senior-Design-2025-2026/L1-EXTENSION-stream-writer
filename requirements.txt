@@ -1,3 +1,2 @@
-# this only needs the requirements; other libbys are built in
-
+celery==5.5.3
 redis==6.4.0

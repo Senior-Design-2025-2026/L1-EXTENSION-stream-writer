@@ -1,8 +1,22 @@
-import os, time, random, redis
+import os
+import time
+import random
+import redis
+from celery import Celery
 
-SOCK = os.getenv("SOCK", "6379")
-print(f"*** UNIX SOCK {SOCK} ***")
+SOCK = os.getenv("SOCK")
 
+# ===================================================
+#                CELERY TASK QUEUE
+# ===================================================
+celery_client = Celery(
+    main=__name__,
+    broker=f"redis+socket://{SOCK}",
+)
+
+# ==================================================
+#                    REDIS STREAM 
+# ==================================================
 deadline = time.time() + 30
 r = None
 while time.time() < deadline:
@@ -22,10 +36,38 @@ while time.time() < deadline:
 if r is None:
     raise RuntimeError(f"Redis socket not ready at {SOCK}")
 
+# ==================================================
+#       REDIS STREAM --> CELERY FOR DB WRITES 
+# ==================================================
 while True:
     t = int(time.time())
-    for i in ("1", "2"):
-        entry = {"sensor_id": i, "temperature_c": f"{random.uniform(15, 45):.2f}"}
-        r.xadd("readings", entry, id=f"{t}-{i}", maxlen=300)
-        readings = r.xrange("readings", min="-", max="+", count=5)
+    temp_1 = random.uniform(15,45)
+    entry_1 = {"sensor_id": "1", "temperature_c": f"{temp_1:.2f}"}
+
+    temp_2 = random.uniform(15,45)
+    entry_2 = {"sensor_id": "2", "temperature_c": f"{temp_2:.2f}"}
+
+    r.xadd("readings", entry_1, id=f"{t}-1", maxlen=300)
+    r.xadd("readings", entry_2, id=f"{t}-2", maxlen=300)
+        
+    print("SENDING READING 1", entry_1)
+    celery_client.send_task(
+        "insert_record", 
+        kwargs={
+            "sensor_id":1,
+            "timestamp":t,
+            "temperature_c":temp_1
+        }
+    )
+
+    print("SENDING READING 2", entry_2)
+    celery_client.send_task(
+        "insert_record", 
+        kwargs={
+            "sensor_id":2,
+            "timestamp":t,
+            "temperature_c":temp_2
+        }
+    )
+
     time.sleep(1)
