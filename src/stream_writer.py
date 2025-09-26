@@ -3,10 +3,12 @@ import time
 import random
 import redis
 from celery import Celery
-from flask import request, Flask
+from flask import request, Flask, jsonify
 
 TEMPERATURE_PORT = os.getenv("TEMPERATURE_PORT")
+HOST             = os.getenv("HOST")
 SOCK             = os.getenv("SOCK")
+MODE             = os.getenv("MODE")
 
 # ===================================================
 #                CELERY TASK QUEUE
@@ -66,12 +68,22 @@ def receive_from_pi():
         #         "sensor2Temperature": t2
         #    }
         #
-        t = int(time.time())
         temp_1 = data.get("sensor1Temperature")
-        entry_1 = {"sensor_id": "1", "temperature_c": f"{temp_1:.2f}"}
-
         temp_2 = data.get("sensor2Temperature")
-        entry_2 = {"sensor_id": "2", "temperature_c": f"{temp_2:.2f}"}
+
+        if temp_1 is not None:
+            temp_1 = f"{temp_1:.2f}"
+        else:
+            temp_1 = ""
+
+        if temp_2 is not None:
+            temp_2 = f"{temp_2:.2f}"
+        else:
+            temp_2 = ""
+
+        t = int(time.time())
+        entry_1 = {"sensor_id": "1", "temperature_c": temp_1}
+        entry_2 = {"sensor_id": "2", "temperature_c": temp_2}
 
         # add to redis stream
         r.xadd("readings", entry_1, id=f"{t}-1", maxlen=300)
@@ -86,6 +98,7 @@ def receive_from_pi():
                 "temperature_c":temp_1
             }
         )
+
         celery_client.send_task(
             "insert_record", 
             kwargs={
@@ -95,7 +108,49 @@ def receive_from_pi():
             }
         )
 
+        return jsonify([
+                'C',
+                False,
+                False
+            ]), 200
+
 if __name__ == "__main__":
-    print("STARTING FLASK SERVER:", TEMPERATURE_PORT)
-    app.run(debug=True, port=TEMPERATURE_PORT)
+    print(f"STARTING REDIS STREAM WRITER IN MODE [{MODE}]")
+    if MODE == "testing":
+        while True:
+            t = int(time.time())
+            temp_1 = random.uniform(15,45)
+            entry_1 = {"sensor_id": "1", "temperature_c": f"{temp_1:.2f}"}
+
+            temp_2 = random.uniform(15,45)
+            entry_2 = {"sensor_id": "2", "temperature_c": f"{temp_2:.2f}"}
+
+            r.xadd("readings", entry_1, id=f"{t}-1", maxlen=300)
+            r.xadd("readings", entry_2, id=f"{t}-2", maxlen=300)
+                
+            celery_client.send_task(
+                "insert_record", 
+                kwargs={
+                    "sensor_id":1,
+                    "timestamp":t,
+                    "temperature_c":temp_1
+                }
+            )
+
+            celery_client.send_task(
+                "insert_record", 
+                kwargs={
+                    "sensor_id":2,
+                    "timestamp":t,
+                    "temperature_c":temp_2
+                }
+            )
+
+            time.sleep(1)
+    else:
+        app.run(
+            debug=True,
+            host="0.0.0.0",
+            port=TEMPERATURE_PORT,
+        )
 
