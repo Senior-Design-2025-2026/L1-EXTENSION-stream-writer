@@ -3,8 +3,10 @@ import time
 import random
 import redis
 from celery import Celery
+from flask import request, Flask
 
-SOCK = os.getenv("SOCK")
+TEMPERATURE_PORT = os.getenv("TEMPERATURE_PORT")
+SOCK             = os.getenv("SOCK")
 
 # ===================================================
 #                CELERY TASK QUEUE
@@ -36,38 +38,64 @@ while time.time() < deadline:
 if r is None:
     raise RuntimeError(f"Redis socket not ready at {SOCK}")
 
-# ==================================================
-#       REDIS STREAM --> CELERY FOR DB WRITES 
-# ==================================================
-while True:
-    t = int(time.time())
-    temp_1 = random.uniform(15,45)
-    entry_1 = {"sensor_id": "1", "temperature_c": f"{temp_1:.2f}"}
 
-    temp_2 = random.uniform(15,45)
-    entry_2 = {"sensor_id": "2", "temperature_c": f"{temp_2:.2f}"}
+# ===================================================
+#                FLASK ENDPOINT
+# ===================================================
+# switching the way that we are doing the communication 
+# pi does not have the processing power to handle 
+# all of the containers (redis, postgres, dash app, celery)
+# this is simply an endpoint for the embedded code to hit 
+# to send data.
 
-    r.xadd("readings", entry_1, id=f"{t}-1", maxlen=300)
-    r.xadd("readings", entry_2, id=f"{t}-2", maxlen=300)
-        
-    print("SENDING READING 1", entry_1)
-    celery_client.send_task(
-        "insert_record", 
-        kwargs={
-            "sensor_id":1,
-            "timestamp":t,
-            "temperature_c":temp_1
-        }
-    )
+# methods:
+# 1. receive data from the temperature sensor
+# 2. send/receive current status of buttons         (TODO - pull from the redis stream)
+app = Flask(__name__)
 
-    print("SENDING READING 2", entry_2)
-    celery_client.send_task(
-        "insert_record", 
-        kwargs={
-            "sensor_id":2,
-            "timestamp":t,
-            "temperature_c":temp_2
-        }
-    )
+@app.route("/temperatureData", methods=["POST"])
+def receive_from_pi():
+    print("RECEIVED!", request.get_json())
+    if request.method == "POST":
+        data = request.get_json()
 
-    time.sleep(1)
+        # data is coming from the pi in a json like so:
+        #
+        #     {
+        #         "sensor1Temperature": t1,
+        #         "sensor2Temperature": t2
+        #    }
+        #
+        t = int(time.time())
+        temp_1 = data.get("sensor1Temperature")
+        entry_1 = {"sensor_id": "1", "temperature_c": f"{temp_1:.2f}"}
+
+        temp_2 = data.get("sensor2Temperature")
+        entry_2 = {"sensor_id": "2", "temperature_c": f"{temp_2:.2f}"}
+
+        # add to redis stream
+        r.xadd("readings", entry_1, id=f"{t}-1", maxlen=300)
+        r.xadd("readings", entry_2, id=f"{t}-2", maxlen=300)
+
+        # add to postgres db
+        celery_client.send_task(
+            "insert_record", 
+            kwargs={
+                "sensor_id":1,
+                "timestamp":t,
+                "temperature_c":temp_1
+            }
+        )
+        celery_client.send_task(
+            "insert_record", 
+            kwargs={
+                "sensor_id":2,
+                "timestamp":t,
+                "temperature_c":temp_2
+            }
+        )
+
+if __name__ == "__main__":
+    print("STARTING FLASK SERVER:", TEMPERATURE_PORT)
+    app.run(debug=True, port=TEMPERATURE_PORT)
+
