@@ -3,7 +3,7 @@ import time
 import redis
 from celery import Celery
 from flask import request, Flask, jsonify
-from .dummy_writer import dummy_writer
+from dummy.dummy_writer import dummy_writer
 
 TEMPERATURE_PORT = os.getenv("TEMPERATURE_PORT")
 HOST             = os.getenv("HOST")
@@ -111,7 +111,7 @@ def receive_from_pi():
         res = jsonify(["C", True, True])
         print("RESPONSE:", res)
         print("")
-        return res
+        return res, 200
 
 if __name__ == "__main__":
     if MODE == "testing":
