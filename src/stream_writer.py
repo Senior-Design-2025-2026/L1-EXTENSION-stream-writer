@@ -1,9 +1,9 @@
 import os
 import time
-import random
 import redis
 from celery import Celery
 from flask import request, Flask, jsonify
+from .dummy_writer import dummy_writer
 
 TEMPERATURE_PORT = os.getenv("TEMPERATURE_PORT")
 HOST             = os.getenv("HOST")
@@ -44,57 +44,57 @@ if r is None:
 # ===================================================
 #                FLASK ENDPOINT
 # ===================================================
-# switching the way that we are doing the communication 
-# pi does not have the processing power to handle 
-# all of the containers (redis, postgres, dash app, celery)
-# this is simply an endpoint for the embedded code to hit 
-# to send data.
-
-# methods:
-# 1. receive data from the temperature sensor
-# 2. send/receive current status of buttons         (TODO - pull from the redis stream)
+# data is coming from the pi in a json like so:
+#
+#     {
+#         "sensor1Temperature": t1,
+#         "sensor2Temperature": t2
+#    }
+#
 app = Flask(__name__)
+
+@app.route("/")
+def health_check():
+    return jsonify({"status":"OK"}), 200
 
 @app.route("/temperatureData", methods=["POST"])
 def receive_from_pi():
+    print("")
     print("RECEIVED!", request.get_json())
+    print("")
     if request.method == "POST":
         data = request.get_json()
 
-        # data is coming from the pi in a json like so:
-        #
-        #     {
-        #         "sensor1Temperature": t1,
-        #         "sensor2Temperature": t2
-        #    }
-        #
-        temp_1 = data.get("sensor1Temperature")
-        temp_2 = data.get("sensor2Temperature")
+        timestamp = data.get("timestamp")
+        temp_1    = data.get("sensor1Temperature")
+        temp_2    = data.get("sensor2Temperature")
 
-        if temp_1 is not None:
-            temp_1 = f"{temp_1:.2f}"
-        else:
-            temp_1 = ""
+        print("")
+        print("TIME", timestamp)
+        print("TEMP 1", temp_1)
+        print("TEMP 2", temp_2)
+        print("")
 
-        if temp_2 is not None:
-            temp_2 = f"{temp_2:.2f}"
-        else:
-            temp_2 = ""
+        temp_1 = f"{temp_1:.2f}" if temp_1 is not None else ""
+        temp_2 = f"{temp_2:.2f}" if temp_2 is not None else ""
 
-        t = int(time.time())
         entry_1 = {"sensor_id": "1", "temperature_c": temp_1}
         entry_2 = {"sensor_id": "2", "temperature_c": temp_2}
 
-        # add to redis stream
-        r.xadd("readings", entry_1, id=f"{t}-1", maxlen=300)
-        r.xadd("readings", entry_2, id=f"{t}-2", maxlen=300)
+        print("")
+        print("ENTRY_1:", entry_1)
+        print("ENTRY_2:", entry_2)
+        print("")
+
+        r.xadd("readings", entry_1, id=f"{timestamp}-1", maxlen=300)
+        r.xadd("readings", entry_2, id=f"{timestamp}-2", maxlen=300)
 
         # add to postgres db
         celery_client.send_task(
             "insert_record", 
             kwargs={
                 "sensor_id":1,
-                "timestamp":t,
+                "timestamp": timestamp,
                 "temperature_c":temp_1
             }
         )
@@ -103,51 +103,22 @@ def receive_from_pi():
             "insert_record", 
             kwargs={
                 "sensor_id":2,
-                "timestamp":t,
+                "timestamp": timestamp,
                 "temperature_c":temp_2
             }
         )
 
-        return jsonify([
-                'C',
-                False,
-                False
-            ]), 200
+        res = jsonify(["C", True, True])
+        print("RESPONSE:", res)
+        print("")
+        return res
 
 if __name__ == "__main__":
-    print(f"STARTING REDIS STREAM WRITER IN MODE [{MODE}]")
     if MODE == "testing":
-        while True:
-            t = int(time.time())
-            temp_1 = random.uniform(15,45)
-            entry_1 = {"sensor_id": "1", "temperature_c": f"{temp_1:.2f}"}
-
-            temp_2 = random.uniform(15,45)
-            entry_2 = {"sensor_id": "2", "temperature_c": f"{temp_2:.2f}"}
-
-            r.xadd("readings", entry_1, id=f"{t}-1", maxlen=300)
-            r.xadd("readings", entry_2, id=f"{t}-2", maxlen=300)
-                
-            celery_client.send_task(
-                "insert_record", 
-                kwargs={
-                    "sensor_id":1,
-                    "timestamp":t,
-                    "temperature_c":temp_1
-                }
-            )
-
-            celery_client.send_task(
-                "insert_record", 
-                kwargs={
-                    "sensor_id":2,
-                    "timestamp":t,
-                    "temperature_c":temp_2
-                }
-            )
-
-            time.sleep(1)
+        print("STARTING STREAM WRITER IN TESTING MODE (DUMMY WRITER)")
+        dummy_writer(r=r)
     else:
+        print("STARTING STREAM WRITER IN EMBEDDED MODE (SERVER)")
         app.run(
             debug=True,
             host="0.0.0.0",
