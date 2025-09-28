@@ -7,4 +7,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY src ./src
-CMD ["python", "-u", "src/stream_writer.py"]
+CMD ["python", "-u", "src/server.py"]
