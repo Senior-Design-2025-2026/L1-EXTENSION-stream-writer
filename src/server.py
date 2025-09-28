@@ -57,71 +57,94 @@ app = Flask(__name__)
 def health_check():
     return jsonify({"status":"OK"}), 200
 
+def stream_reading(sensor_id, timestamp, temperature_c):
+    temperature_c = f"{temperature_c:.2f}" 
+    entry = {"sensor_id": f"{sensor_id}", "temperature_c": temperature_c}
+    r.xadd("readings", entry, id=f"{timestamp}-{sensor_id}", maxlen=300)
+
+def add_reading_to_db(sensor_id, timestamp, temperature_c):
+    celery_client.send_task(
+        "insert_record", 
+        kwargs={
+            "sensor_id": sensor_id,
+            "timestamp": timestamp,
+            "temperature_c": temperature_c
+        }
+    )
+
+def system_units():
+    # TODO - figure something out here. way it is currently set up is chopped
+    return "C"
+
+def sensor_1_toggled():
+    # TODO - figure something out here. way it is currently set up is chopped
+    return False
+
+def sensor_2_toggled():
+    # TODO - figure something out here. way it is currently set up is chopped
+    return False
+
 @app.route("/temperatureData", methods=["POST"])
-def receive_from_pi():
-    print("")
-    print("RECEIVED!", request.get_json())
-    print("")
-    if request.method == "POST":
-        data = request.get_json()
+def handle_incoming_readings():
+    try:
+        if request.method == "POST":
+            data      = request.get_json()
+            timestamp = data.get("timestamp")
+            temp_1    = data.get("sensor1Temperature")
+            temp_2    = data.get("sensor2Temperature")
 
-        timestamp = data.get("timestamp")
-        temp_1    = data.get("sensor1Temperature")
-        temp_2    = data.get("sensor2Temperature")
+            if temp_1 is not None:
+                print("")
+                print(">> NEW")
+                print("Temperature")
+                print("- Sensor:", 1)
+                print("- Timestamp:", timestamp)
+                print("- Temperature (C):", temp_1)
+                stream_reading(sensor_id=1, timestamp=timestamp, temperature_c=temp_1)
+                add_reading_to_db(sensor_id=1, timestamp=timestamp, temperature_c=temp_1)
 
-        print("")
-        print("TIME", timestamp)
-        print("TEMP 1", temp_1)
-        print("TEMP 2", temp_2)
-        print("")
+            if temp_2 is not None:
+                print("")
+                print(">> NEW")
+                print("Temperature")
+                print("- Sensor:", 2)
+                print("- Timestamp:", timestamp)
+                print("- Temperature (C):", temp_2)
+                stream_reading(sensor_id=2, timestamp=timestamp, temperature_c=temp_2)
+                add_reading_to_db(sensor_id=2, timestamp=timestamp, temperature_c=temp_2)
 
-        temp_1 = f"{temp_1:.2f}" if temp_1 is not None else ""
-        temp_2 = f"{temp_2:.2f}" if temp_2 is not None else ""
-
-        entry_1 = {"sensor_id": "1", "temperature_c": temp_1}
-        entry_2 = {"sensor_id": "2", "temperature_c": temp_2}
-
-        print("")
-        print("ENTRY_1:", entry_1)
-        print("ENTRY_2:", entry_2)
-        print("")
-
-        r.xadd("readings", entry_1, id=f"{timestamp}-1", maxlen=300)
-        r.xadd("readings", entry_2, id=f"{timestamp}-2", maxlen=300)
-
-        # add to postgres db
-        celery_client.send_task(
-            "insert_record", 
-            kwargs={
-                "sensor_id":1,
-                "timestamp": timestamp,
-                "temperature_c":temp_1
-            }
+            response = jsonify(
+                [
+                    system_units(),
+                    sensor_1_toggled(), 
+                    sensor_2_toggled(),
+                ]
+            )
+        else:
+            response = jsonify(
+                [
+                    "C", 
+                    False,
+                    False
+                ]
+            )
+    except Exception as e:
+        print("[REDIS STREAMER] ERROR:", e)
+        response = jsonify(
+            [
+                "C", 
+                False,
+                False
+            ]
         )
-
-        celery_client.send_task(
-            "insert_record", 
-            kwargs={
-                "sensor_id":2,
-                "timestamp": timestamp,
-                "temperature_c":temp_2
-            }
-        )
-
-        res = jsonify(["C", True, True])
-        print("RESPONSE:", res)
-        print("")
-        return res, 200
+    return response, 200
 
 if __name__ == "__main__":
     if MODE == "testing":
-        print("STARTING STREAM WRITER IN TESTING MODE (DUMMY WRITER)")
-        dummy_writer(r=r)
+        dummy_writer(r=r, celery_client=celery_client)
     else:
-        print("STARTING STREAM WRITER IN EMBEDDED MODE (SERVER)")
         app.run(
             debug=True,
-            host="0.0.0.0",
+            host=HOST,
             port=TEMPERATURE_PORT,
         )
-

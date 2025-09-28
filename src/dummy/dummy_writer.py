@@ -3,7 +3,7 @@ import random
 import redis
 from celery import Celery
 
-def dummy_writer(r):
+def dummy_writer(r, celery_client):
     while True:
         t = int(time.time())
         temp_1 = random.uniform(15,45)
