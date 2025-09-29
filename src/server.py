@@ -4,6 +4,7 @@ import redis
 from celery import Celery
 from flask import request, Flask, jsonify
 from dummy.dummy_writer import dummy_writer
+import json
 
 TEMPERATURE_PORT = os.getenv("TEMPERATURE_PORT")
 HOST             = os.getenv("HOST")
@@ -58,8 +59,10 @@ def health_check():
     return jsonify({"status":"OK"}), 200
 
 def stream_reading(sensor_id, timestamp, temperature_c):
-    temperature_c = f"{temperature_c:.2f}" 
-    entry = {"sensor_id": f"{sensor_id}", "temperature_c": temperature_c}
+    entry = {
+        "sensor_id": f"{sensor_id}",
+        "temperature_c": json.dumps(temperature_c)
+    }
     r.xadd("readings", entry, id=f"{timestamp}-{sensor_id}", maxlen=300)
 
 def add_reading_to_db(sensor_id, timestamp, temperature_c):
@@ -84,34 +87,23 @@ def sensor_2_toggled():
     # TODO - figure something out here. way it is currently set up is chopped
     return False
 
+def round_c(temperature_c):
+    return None if temperature_c is None else round(float(temperature_c), 2)
+
 @app.route("/temperatureData", methods=["POST"])
 def handle_incoming_readings():
     try:
         if request.method == "POST":
             data      = request.get_json()
             timestamp = data.get("timestamp")
-            temp_1    = data.get("sensor1Temperature")
-            temp_2    = data.get("sensor2Temperature")
 
-            if temp_1 is not None:
-                print("")
-                print(">> NEW")
-                print("Temperature")
-                print("- Sensor:", 1)
-                print("- Timestamp:", timestamp)
-                print("- Temperature (C):", temp_1)
-                stream_reading(sensor_id=1, timestamp=timestamp, temperature_c=temp_1)
-                add_reading_to_db(sensor_id=1, timestamp=timestamp, temperature_c=temp_1)
+            temp_1 = round_c(data.get("sensor1Temperature"))
+            stream_reading(sensor_id=1, timestamp=timestamp, temperature_c=temp_1)
+            add_reading_to_db(sensor_id=1, timestamp=timestamp, temperature_c=temp_1)
 
-            if temp_2 is not None:
-                print("")
-                print(">> NEW")
-                print("Temperature")
-                print("- Sensor:", 2)
-                print("- Timestamp:", timestamp)
-                print("- Temperature (C):", temp_2)
-                stream_reading(sensor_id=2, timestamp=timestamp, temperature_c=temp_2)
-                add_reading_to_db(sensor_id=2, timestamp=timestamp, temperature_c=temp_2)
+            temp_2 = round_c(data.get("sensor2Temperature"))
+            stream_reading(sensor_id=2, timestamp=timestamp, temperature_c=temp_2)
+            add_reading_to_db(sensor_id=2, timestamp=timestamp, temperature_c=temp_2)
 
             response = jsonify(
                 [
@@ -129,7 +121,6 @@ def handle_incoming_readings():
                 ]
             )
     except Exception as e:
-        print("[REDIS STREAMER] ERROR:", e)
         response = jsonify(
             [
                 "C", 
