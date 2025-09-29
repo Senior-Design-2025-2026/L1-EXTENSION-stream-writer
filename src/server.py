@@ -1,71 +1,15 @@
-import os
-import time
-import redis
 from celery import Celery
+import os
 from flask import request, Flask, jsonify
-from dummy.dummy_writer import dummy_writer
-from real.virtualization import check_unit_toggle, check_button_toggle
-from utils.unit_methods import system_units, round_c
-from utils.db_methods import add_reading_to_db
-from utils.stream_reading import stream_temperature_reading
 
-# ===================================================
-#              ENVIRONMENT VARIABLES
-# ===================================================
-TEMPERATURE_PORT = os.getenv("TEMPERATURE_PORT")
-HOST             = os.getenv("HOST")
-SOCK             = os.getenv("SOCK")
-MODE             = os.getenv("MODE")
-
-# ===================================================
-#                CELERY TASK QUEUE
-# ===================================================
-celery_client = Celery(
-    main=__name__,
-    broker=f"redis+socket://{SOCK}",
-)
-
-# ==================================================
-#                    REDIS STREAM 
-# ==================================================
-deadline = time.time() + 30
-r = None
-while time.time() < deadline:
-    if os.path.exists(SOCK):
-        try:
-            r = redis.Redis(
-                unix_socket_path=SOCK,
-                decode_responses=True
-            )
-            r.ping()
-            break
-        except Exception:
-            time.sleep(0.5)
-
-    else:
-        time.sleep(0.2)
-
-if r is None:
-    raise RuntimeError(f"Redis socket not ready at {SOCK}")
-
-# status setup
-r.set("physical:1:status", "OFF")
-r.set("physical:2:status", "OFF")
-
-r.set("virtual:1:status", "OFF")
-r.set("virtual:1:desired_status", "None")
-r.set("virtual:1:wants_toggle", "false")
-
-r.set("virtual:2:status", "OFF")
-r.set("virtual:2:desired_status", "None")
-r.set("virtual:2:wants_toggle", "false")
-
-r.set("physical:unit", "c")
-r.set("virtual:unit", "f")
-
-# ===================================================
-#       HTTP ENDPOINTS FOR EMBEDDED SYSTEM
-r.set("physical:2:status", "OFF")
+from src.dummy.dummy_writer import dummy_writer
+from src.real.virtualization import check_unit_toggle, check_button_toggle
+from src.utils.unit_methods import system_units, round_c
+from src.utils.db_methods import add_reading_to_db
+from src.utils.stream_reading import stream_temperature_reading
+from src.setup.redis_client import r
+from src.setup.task_queue import celery_client
+from src.config import TEMPERATURE_PORT, HOST, SOCK, MODE
 
 # ===================================================
 #       HTTP ENDPOINTS FOR EMBEDDED SYSTEM
@@ -79,6 +23,7 @@ def health_check():
 @app.route("/temperatureData", methods=["POST"])
 def handle_readings():
     try:
+        print("READING RECEIVED")
         if request.method == "POST" and MODE != "testing":
             # 1. retrieve message from device
             data      = request.get_json()
@@ -105,6 +50,8 @@ def handle_readings():
             # push the reading to the database
             add_reading_to_db(sensor_id="1", timestamp=timestamp, temperature_c=temp_1)
             add_reading_to_db(sensor_id="2", timestamp=timestamp, temperature_c=temp_2)
+            
+            print("READING RETURNED")
 
             response = jsonify(
                 [

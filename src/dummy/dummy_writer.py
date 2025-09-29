@@ -1,7 +1,8 @@
 import time
 import random
 import redis
-from celery import Celery
+
+from src.setup.task_queue import celery_client
 
 def dummy_writer(r, celery_client):
     while True:

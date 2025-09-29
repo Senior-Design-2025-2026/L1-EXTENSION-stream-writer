@@ -1,6 +1,9 @@
+from celery import Celery
 import redis
 import json
-from server import r
+
+from src.setup.redis_client import r
+from src.setup.task_queue import celery_client
 
 def stream_temperature_reading(sensor_id:str, timestamp:str, temperature_c:float) -> str:
     entry = {

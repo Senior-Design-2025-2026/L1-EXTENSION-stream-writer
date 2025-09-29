@@ -1,5 +1,5 @@
 import redis
-from server import r
+from src.setup.redis_client import r
 
 def _was_physical_toggle(sensor_id:str, curr_status_p:str) -> bool:
     prev_status_p = r.get(f"physical:{sensor_id}:status")
