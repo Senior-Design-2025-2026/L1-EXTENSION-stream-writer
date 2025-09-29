@@ -1,4 +1,5 @@
 import time
+import json
 import random
 import redis
 
@@ -7,27 +8,27 @@ from src.setup.task_queue import celery_client
 from src.setup.redis_client import r
 
 def dummy_stream_record(sensor_id:str, timestamp:int):
-    temp = random.uniform(25,35)
+
+    # check for toggle 
+    status = dummy_check_button_toggle(sensor_id=sensor_id)
+    # on = random val, off = None
+    temp_c = random.uniform(25,35) if status == "ON" else None
+
     entry = {
         "sensor_id":sensor_id,
-        "temperature_c":f"{temp:.2f}",
+        "temperature_c":json.dumps(temp_c)
     }
 
-    # check for toggle
-    status = dummy_check_button_toggle(sensor_id=sensor_id)
+    r.xadd("readings", entry, id=f"{timestamp}-{sensor_id}", maxlen=300)
 
-    # write if sensor is "ON"
-    if status == "ON":
-        r.xadd("readings", entry, id=f"{timestamp}-{sensor_id}", maxlen=300)
-
-        celery_client.send_task(
-            "insert_record", 
-            kwargs={
-                "sensor_id":sensor_id,
-                "timestamp":timestamp,
-                "temperature_c":temp
-            }
-        )
+    celery_client.send_task(
+        "insert_record", 
+        kwargs={
+            "sensor_id":sensor_id,
+            "timestamp":timestamp,
+            "temperature_c":temp_c
+        }
+    )
 
 def dummy_writer(r, celery_client):
     # SETUP - start both sensors on
