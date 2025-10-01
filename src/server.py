@@ -18,12 +18,12 @@ app = Flask(__name__)
 
 @app.route("/")
 def health_check():
+    print("HEALTHY")
     return jsonify({"status":"OK"}), 200
 
 @app.route("/temperatureData", methods=["POST"])
 def handle_readings():
     try:
-        print("READING RECEIVED")
         if request.method == "POST" and MODE != "testing":
             # 1. retrieve message from device
             data      = request.get_json()
@@ -32,30 +32,31 @@ def handle_readings():
             # 2. get reading information
             timestamp = int(timestamp)
             temp_c_1 = round_c(data.get("sensor1Temperature"))
-            temp_c_2 = round_c(data.get("sensor1Temperature"))
+            temp_c_2 = round_c(data.get("sensor2Temperature"))
 
             # 3. add to redis stream; returns status of physical button
             curr_status_p_1:str = stream_temperature_reading(sensor_id="1", timestamp=timestamp, temperature_c=temp_c_1)
             curr_status_p_2:str = stream_temperature_reading(sensor_id="2", timestamp=timestamp, temperature_c=temp_c_2)
 
-            # 4. add to database
-            add_reading_to_db(sensor_id="1", timestamp=timestamp, temperature_c=temp_c_1)
-            add_reading_to_db(sensor_id="2", timestamp=timestamp, temperature_c=temp_c_2)
+            # commenting out this functionality for lab 1 demo
+            # # 4. add to database
+            # add_reading_to_db(sensor_id="1", timestamp=timestamp, temperature_c=temp_c_1)
+            # add_reading_to_db(sensor_id="2", timestamp=timestamp, temperature_c=temp_c_2)
 
             # 5. prepare response body
             perform_virtual_btn_toggle_1 = check_button_toggle(sensor_id="1", curr_status_p=curr_status_p_1)
             perform_virtual_btn_toggle_2 = check_button_toggle(sensor_id="2", curr_status_p=curr_status_p_2)
             perform_virtual_unit_toggle  = check_unit_toggle()
 
-            # push the reading to the database
-            add_reading_to_db(sensor_id="1", timestamp=timestamp, temperature_c=temp_1)
-            add_reading_to_db(sensor_id="2", timestamp=timestamp, temperature_c=temp_2)
-            
-            print("READING RETURNED")
+            # 6. check for thresholds
+            # check the maximum floor thresh and minimum top thresh to see if there is a hit
+            # last_three = r.revxrange(f"readings:{sensor_id}", "+", "-", count=3)
+            # json_df = r.get("users_df")
+            # check_thresh(last_three=last_three, sensor_id=sensor_id, df=df)
 
             response = jsonify(
                 [
-                    system_units(),
+                    "C",
                     perform_virtual_btn_toggle_1, 
                     perform_virtual_btn_toggle_2,
                 ]

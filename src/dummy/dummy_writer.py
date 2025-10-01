@@ -19,7 +19,7 @@ def dummy_stream_record(sensor_id:str, timestamp:int):
         "temperature_c":json.dumps(temp_c)
     }
 
-    r.xadd("readings", entry, id=f"{timestamp}-{sensor_id}", maxlen=300)
+    r.xadd(f"readings:{sensor_id}", entry, id=timestamp, maxlen=300)
 
     celery_client.send_task(
         "insert_record", 

@@ -10,15 +10,6 @@ def _was_virtual_toggle(sensor_id:str) -> bool:
     return True if wants_toggle == "true" else False
 
 def _handle_collision(sensor_id:str, curr_status_p:str) -> bool:
-    # This does not support multiple users, so the 'collision' here is
-    # between the user of the physical device and the user of the web application.
-    # For simplicity, we just take the physical's status.
-    # this approach is breakable by button mashing, but it is a prototype.
-    #
-    # future would use a message queue (or reuse the redis stream) to manage messages 
-    # from multiple users. This would require each connection to have an identity
-    # which is also not in place. Or an elevated admin access could be implemented 
-    # to provide mutual exclusion between users.
     r.set(f"physical:{sensor_id}:status", curr_status_p)
 
     r.set(f"virtual:{sensor_id}:status", curr_status_p)
@@ -32,17 +23,25 @@ def _handle_physical_toggle(sensor_id:str, curr_status_p:str) -> None:
     r.set(f"virtual:{sensor_id}:feedback", f"[Physical] Button {sensor_id} toggled")
 
 def _handle_virtual_toggle(sensor_id:str) -> None:
-    desired_virtual = r.get(f"virtual:{sensor_id}:desired_status")
+    curr = r.get(f"virtual:{sensor_id}:status")
 
-    if desired_virtual is not None and desired_virtual != "None":
-        r.set(f"physical:{sensor_id}:status", desired_virtual)
+    print("curr", curr)
+    if curr is not None and curr in ("ON", "OFF"):
 
-        r.set(f"virtual:{sensor_id}:status", desired_virtual)
+        if curr == "ON":
+            new = "OFF"
+        else: 
+            new = "ON"
+
+        print("SETTING:")
+        print("- physical:", new)
+        print("- virtual:", new)
         r.set(f"virtual:{sensor_id}:feedback", f"[Virtual] Button {sensor_id} toggled")
+
     else:
-        print("")
-        print("[UNEXPECTED]", "desired_virtual:", desired_virtual)
-        print("[UNEXPECTED]")
+        print(">>")
+        print("-- [UNEXPECTED]", "curr:", curr)
+        print("<<")
 
 def _reset_virtual_flags(sensor_id:str):
     r.set(f"virtual:{sensor_id}:wants_toggle", "false")
@@ -53,19 +52,29 @@ def check_button_toggle(sensor_id:str, curr_status_p:str) -> bool:
     was_toggle_p = _was_physical_toggle(sensor_id=sensor_id, curr_status_p=curr_status_p)
     was_toggle_v = _was_virtual_toggle(sensor_id=sensor_id)
 
+    print(f"---------- SENSOR {sensor_id} ----------")
+    print("")
+    if was_toggle_p:
+        print("WAS PHYSICAL TOGGLE")
+    if was_toggle_v:
+        print("WAS VIRTUAL TOGGLE")
+
     # 2. resolve toggle
     # a) collision (both toggled)
     if was_toggle_p and was_toggle_v:
+        print("RESOLVING COLLISION")
         perform_virtual_toggle = _handle_collision(sensor_id=sensor_id, curr_status_p=curr_status_p)
         _reset_virtual_flags(sensor_id=sensor_id)
 
     # b) physical toggled
     elif was_toggle_p:
+        print("HANDLING PHYSICAL TOGGLE")
         _handle_physical_toggle(sensor_id=sensor_id, curr_status_p=curr_status_p)
         perform_virtual_toggle = False   
 
     # c) virtual toggled
     elif was_toggle_v:
+        print("HANDLING VIRTUAL TOGGLE")
         _handle_virtual_toggle(sensor_id=sensor_id)
         _reset_virtual_flags(sensor_id=sensor_id)
         perform_virtual_toggle = True
