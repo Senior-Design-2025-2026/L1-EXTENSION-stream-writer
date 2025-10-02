@@ -141,6 +141,7 @@ def handle_readings():
 # ===================================================
 if __name__ == "__main__":
     if MODE == "testing":
+        r.set("systemStatus", "DUMMY DATA MODE")
         dummy_writer(r=r, celery_client=celery_client)
     else:
         app.run(
