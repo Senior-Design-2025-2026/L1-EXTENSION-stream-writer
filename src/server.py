@@ -16,64 +16,85 @@ from src.config import TEMPERATURE_PORT, HOST, SOCK, MODE
 # ===================================================
 app = Flask(__name__)
 
+TIMEOUT_S = 10
+
 @app.route("/")
 def health_check():
-    print("HEALTHY")
     return jsonify({"status":"OK"}), 200
+
+@app.route("/turnOFF", methods=["GET"])
+def turn_off():
+    if request.method == "GET":
+        r.set("systemStatus", "DISCONNECTED")
+        return jsonify({"status":"OK"}), 200
+    return jsonify({"status":"ERROR"}), 500
 
 @app.route("/temperatureData", methods=["POST"])
 def handle_readings():
-    try:
-        if request.method == "POST" and MODE != "testing":
-            # 1. retrieve message from device
-            data      = request.get_json()
-            timestamp = data.get("timestamp")
+    #   data comes in the form
+    # 
+    #   timestamp
+    #   sensor[1/2]:
+    #    - temp?
+    #    - sensor[1/2]Unplugged?
+    #
+    # if this endpoint is reached then the system is turned on
+    if request.method == "POST" and MODE != "testing":
+        r.set("systemStatus", "CONNECTED", ex=TIMEOUT_S)                  
 
-            # 2. get reading information
-            timestamp = int(timestamp)
+        data      = request.get_json()
+        timestamp = int(data.get("timestamp"))
+
+        print("")
+        print("DATA", data)
+        print("timestamp", timestamp)
+
+        try:
             temp_c_1 = round_c(data.get("sensor1Temperature"))
+
+            if temp_c_1 is not None:
+                temp_c_1 = round_c(data.get("sensor1Temperature"))
+                curr_status_p_1:str = stream_temperature_reading(sensor_id="1", timestamp=timestamp, temperature_c=temp_c_1)
+                toggle_1 = check_button_toggle(sensor_id="1", curr_status_p=curr_status_p_1)
+                # add_reading_to_db(sensor_id="1", timestamp=timestamp, temperature_c=temp_c_1)
+            else:
+                r.set(f"virtual:1:status", "UNPLUGGED")
+                toggle_1 = False
+        except Exception as e:
+            print("EXCEPTION SENSOR 1", e)
+            toggle_1 = False
+
+        try:
             temp_c_2 = round_c(data.get("sensor2Temperature"))
 
-            # 3. add to redis stream; returns status of physical button
-            curr_status_p_1:str = stream_temperature_reading(sensor_id="1", timestamp=timestamp, temperature_c=temp_c_1)
-            curr_status_p_2:str = stream_temperature_reading(sensor_id="2", timestamp=timestamp, temperature_c=temp_c_2)
+            if temp_c_2 is not None:
+                temp_c_2 = round_c(data.get("sensor2Temperature"))
+                curr_status_p_2:str = stream_temperature_reading(sensor_id="2", timestamp=timestamp, temperature_c=temp_c_2)
+                toggle_2 = check_button_toggle(sensor_id="2", curr_status_p=curr_status_p_2)
+                # add_reading_to_db(sensor_id="2", timestamp=timestamp, temperature_c=temp_c_2)
+            else:
+                r.set(f"virtual:2:status", "UNPLUGGED")
+                toggle_2 = False
+        except Exception as e:
+            print("EXCEPTION SENSOR 2", e)
+            toggle_2 = False
 
-            # commenting out this functionality for lab 1 demo
-            # # 4. add to database
-            # add_reading_to_db(sensor_id="1", timestamp=timestamp, temperature_c=temp_c_1)
-            # add_reading_to_db(sensor_id="2", timestamp=timestamp, temperature_c=temp_c_2)
+        perform_virtual_unit_toggle  = check_unit_toggle()
 
-            # 5. prepare response body
-            perform_virtual_btn_toggle_1 = check_button_toggle(sensor_id="1", curr_status_p=curr_status_p_1)
-            perform_virtual_btn_toggle_2 = check_button_toggle(sensor_id="2", curr_status_p=curr_status_p_2)
-            perform_virtual_unit_toggle  = check_unit_toggle()
+        # check the maximum floor thresh and minimum top thresh to see if there is a hit
+        # last_three = r.revxrange(f"readings:{sensor_id}", "+", "-", count=3)
+        # json_df = r.get("users_df")
+        # check_thresh(last_three=last_three, sensor_id=sensor_id, df=df)
 
-            # 6. check for thresholds
-            # check the maximum floor thresh and minimum top thresh to see if there is a hit
-            # last_three = r.revxrange(f"readings:{sensor_id}", "+", "-", count=3)
-            # json_df = r.get("users_df")
-            # check_thresh(last_three=last_three, sensor_id=sensor_id, df=df)
-
-            response = jsonify(
-                [
-                    "C",
-                    perform_virtual_btn_toggle_1, 
-                    perform_virtual_btn_toggle_2,
-                ]
-            )
-        else:
-            response = jsonify(
-                [
-                    "C", 
-                    False,
-                    False
-                ]
-            )
-    except Exception as e:
-        print("")
-        print("[ERROR] Server")
-        print("[ERROR]", e)
-        print("[ERROR]", "returning defaults")
+        response = jsonify(
+            [
+                "C",
+                toggle_1,
+                toggle_2,
+            ]
+        )
+    else:
+        # no change to physical device
         response = jsonify(
             [
                 "C", 
@@ -81,7 +102,7 @@ def handle_readings():
                 False
             ]
         )
-    return response, 200
+    return response
 
 # ===================================================
 #                   ENTRY POINT
