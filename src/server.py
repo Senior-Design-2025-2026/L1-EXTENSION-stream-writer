@@ -25,6 +25,16 @@ def turn_off():
         return jsonify({"status":"OK"}), 200
     return jsonify({"status":"ERROR"}), 500
 
+@app.route("/nullData", methods=["POST"])
+def stream_null():
+    if request.method == "GET":
+        data = request.get_json()
+        timestamp = int(data.get("timestamp"))
+        stream_reading(sensor_id="1", timestamp=timestamp)
+        stream_reading(sensor_id="2", timestamp=timestamp)
+        return jsonify({"status":"OK"}), 200
+    return jsonify({"status":"ERROR"}), 500
+
 @app.route("/temperatureData", methods=["POST"])
 def handle_readings():
     if request.method == "POST" and MODE != "testing":
@@ -102,17 +112,17 @@ def handle_readings():
                     r.set("timeout_h", timeout_h-1)
 
             # sensor unplugged 
-            else:
+            elif unplugged:
+                stream_reading(sensor_id=id, timestamp=timestamp, temperature_c=None)    
                 r.set(f"sensor:{id}:unplugged", "true")
                 perform_toggle.append(False)
 
+        # if data.get("OFF"):
+        #     stream_reading(sensor_id=id, timestamp=timestamp, temperature_c=None)    
+        #     perform_toggle.append(False)
+
         # check for unit change virtualization
         unit = get_unit()
-        print("UNIT", unit)
-
-        # check the maximum floor thresh and minimum top thresh to see if there is a hit
-        # json_df = r.get("users_df")
-        # check_thresh(last_three=last_three, sensor_id=sensor_id, df=df)
 
         response = jsonify(
             [

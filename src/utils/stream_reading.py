@@ -2,7 +2,7 @@ import json
 
 from src.setup.redis_client import r
 
-def stream_reading(sensor_id, timestamp, temperature_c):
+def stream_reading(sensor_id, timestamp, temperature_c=None):
     entry = {
         "sensor_id": sensor_id,
         "temperature_c": json.dumps(temperature_c)
