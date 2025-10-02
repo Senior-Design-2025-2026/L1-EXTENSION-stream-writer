@@ -32,11 +32,9 @@ r.set("physical:1:status", "OFF")
 r.set("physical:2:status", "OFF")
 
 r.set("virtual:1:status", "OFF")
-r.set("virtual:1:desired_status", "None")
 r.set("virtual:1:wants_toggle", "false")
 
 r.set("virtual:2:status", "OFF")
-r.set("virtual:2:desired_status", "None")
 r.set("virtual:2:wants_toggle", "false")
 
 r.set("temperatureUnit", "C")

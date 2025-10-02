@@ -41,14 +41,14 @@ def handle_readings():
         r.set("systemStatus", "CONNECTED")
 
         data      = request.get_json()
-        timestamp = int(data.get("timestamp"))
+        timestamp = int(data.get("timestamp"))              
 
         # process sensors
         ids = ["1", "2"]
         perform_toggle:list[bool] = []
         for id in ids:
 
-            unplugged = data.get(f"sensor{id}Unplugged")
+            unplugged = data.get(f"sensor{id}Unplugged") 
 
             # sensor plugged in
             if not unplugged: 
@@ -117,11 +117,6 @@ def handle_readings():
                 r.set(f"sensor:{id}:unplugged", "true")
                 perform_toggle.append(False)
 
-        # if data.get("OFF"):
-        #     stream_reading(sensor_id=id, timestamp=timestamp, temperature_c=None)    
-        #     perform_toggle.append(False)
-
-        # check for unit change virtualization
         unit = get_unit()
 
         response = jsonify(
