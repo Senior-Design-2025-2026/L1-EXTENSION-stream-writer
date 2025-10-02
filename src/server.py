@@ -27,7 +27,7 @@ def turn_off():
 
 @app.route("/nullData", methods=["POST"])
 def stream_null():
-    if request.method == "GET":
+    if request.method == "POST":
         data = request.get_json()
         timestamp = int(data.get("timestamp"))
         stream_reading(sensor_id="1", timestamp=timestamp)
