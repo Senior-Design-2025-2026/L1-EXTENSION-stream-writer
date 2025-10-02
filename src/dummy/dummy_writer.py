@@ -1,7 +1,6 @@
 import time
 import json
 import random
-import redis
 
 from src.dummy.virtualization import dummy_check_button_toggle
 from src.setup.task_queue import celery_client

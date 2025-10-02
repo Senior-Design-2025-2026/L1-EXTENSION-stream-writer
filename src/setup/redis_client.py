@@ -39,6 +39,4 @@ r.set("virtual:2:status", "OFF")
 r.set("virtual:2:desired_status", "None")
 r.set("virtual:2:wants_toggle", "false")
 
-r.set("physical:unit", "c")
-r.set("virtual:unit", "f")
-
+r.set("temperatureUnit", "C")

@@ -1,4 +1,3 @@
-from celery import Celery
 from typing import Union
 
 from src.setup.task_queue import celery_client

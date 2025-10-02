@@ -1,4 +1,3 @@
-import os
 from celery import Celery
 
 from src.config import SOCK

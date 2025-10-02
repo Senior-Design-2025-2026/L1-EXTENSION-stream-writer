@@ -1,45 +1,8 @@
-import redis
 from src.setup.redis_client import r
 
-def _was_physical_toggle(sensor_id:str, curr_status_p:str) -> bool:
-    prev_status_p = r.get(f"physical:{sensor_id}:status")
-    return True if prev_status_p != curr_status_p else False
-
-def _was_virtual_toggle(sensor_id:str) -> bool:
-    wants_toggle = r.get(f"virtual:{sensor_id}:wants_toggle")
-    return True if wants_toggle == "true" else False
-
-def _handle_collision(sensor_id:str, curr_status_p:str) -> bool:
-    # no collision conflict; just setting the status to the physical devices!
-    # this would be an area for improvement in a future iteration
-    r.set(f"physical:{sensor_id}:status", curr_status_p)
-    r.set(f"virtual:{sensor_id}:status", curr_status_p)
-    r.set(f"virtual:{sensor_id}:feedback", f"[REJECTED] Button {sensor_id} toggle")
-    return False
-
-def _handle_physical_toggle(sensor_id:str, curr_status_p:str) -> None:
-    r.set(f"physical:{sensor_id}:status", curr_status_p)
-
-    r.set(f"virtual:{sensor_id}:status", curr_status_p)
-    r.set(f"virtual:{sensor_id}:feedback", f"[Physical] Button {sensor_id} toggled")
-
-def _handle_virtual_toggle(sensor_id:str) -> None:
-    curr = r.get(f"virtual:{sensor_id}:status")
-
-    if curr is not None and curr in ("ON", "OFF"):
-
-        if curr == "ON":
-            new = "OFF"
-        else: 
-            new = "ON"
-
-        r.set(f"virtual:{sensor_id}:status", new)
-        r.set(f"virtual:{sensor_id}:feedback", f"[Virtual] Button {sensor_id} toggled")
-        r.set(f"virtual:{sensor_id}:wants_toggle", "false")
-
-    else:
-        print("[UNEXPECTED]", "curr:", curr)
-
+# =========================================================== 
+#                   BUTTON TOGGLE
+# ===========================================================
 def check_button_toggle(sensor_id:str, curr_status_p:str) -> bool:
     # 1. detect toggles
     was_toggle_p = _was_physical_toggle(sensor_id=sensor_id, curr_status_p=curr_status_p)
@@ -72,12 +35,49 @@ def check_button_toggle(sensor_id:str, curr_status_p:str) -> bool:
 
     return perform_virtual_toggle
 
-def check_unit_toggle() -> bool:
-    unit_p = r.get("physical:unit")
-    unit_v = r.get("virtual:unit")
-    
-    if (unit_v is not None) and (unit_p is not None) and (unit_v != unit_p):
-        r.set("physical:unit", unit_v)
-        return True
+# -- BUTTON TOGGLE HELPERS
+
+def _was_physical_toggle(sensor_id:str, curr_status_p:str) -> bool:
+    prev_status_p = r.get(f"physical:{sensor_id}:status")
+    return True if prev_status_p != curr_status_p else False
+
+def _was_virtual_toggle(sensor_id:str) -> bool:
+    wants_toggle = r.get(f"virtual:{sensor_id}:wants_toggle")
+    return True if wants_toggle == "true" else False
+
+def _handle_collision(sensor_id:str, curr_status_p:str) -> bool:
+    # no logic here collision conflict; just setting the status to the physical devices!
+    r.set(f"physical:{sensor_id}:status", curr_status_p)
+    r.set(f"virtual:{sensor_id}:status", curr_status_p)
+    r.set(f"virtual:{sensor_id}:feedback", f"[REJECTED] Button {sensor_id} toggle")
+    return False
+
+def _handle_physical_toggle(sensor_id:str, curr_status_p:str) -> None:
+    r.set(f"physical:{sensor_id}:status", curr_status_p)
+
+    r.set(f"virtual:{sensor_id}:status", curr_status_p)
+    r.set(f"virtual:{sensor_id}:feedback", f"[Physical] Button {sensor_id} toggled")
+
+def _handle_virtual_toggle(sensor_id:str) -> None:
+    curr = r.get(f"virtual:{sensor_id}:status")
+
+    if curr is not None and curr in ("ON", "OFF"):
+
+        if curr == "ON":
+            new = "OFF"
+        else: 
+            new = "ON"
+
+        r.set(f"virtual:{sensor_id}:status", new)
+        r.set(f"virtual:{sensor_id}:feedback", f"[Virtual] Button {sensor_id} toggled")
+        r.set(f"virtual:{sensor_id}:wants_toggle", "false")
+
     else:
-        return False
+        print("[UNEXPECTED]", "curr:", curr)
+
+# =========================================================== 
+#                        UNIT TOGGLE
+# ===========================================================
+def get_unit():
+    unit = r.get("temperatureUnit")
+    return unit

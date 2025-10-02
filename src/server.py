@@ -1,15 +1,11 @@
-from celery import Celery
-import os
 from flask import request, Flask, jsonify
 
 from src.dummy.dummy_writer import dummy_writer
-from src.real.virtualization import check_unit_toggle, check_button_toggle
-from src.utils.unit_methods import system_units, round_c
-from src.utils.db_methods import add_reading_to_db
-from src.utils.stream_reading import stream_temperature_reading
+from src.real.virtualization import check_button_toggle, get_unit
+from src.utils.stream_reading import hits_thresh_low, hits_thresh_high, stream_reading, get_temps
 from src.setup.redis_client import r
 from src.setup.task_queue import celery_client
-from src.config import TEMPERATURE_PORT, HOST, SOCK, MODE
+from src.config import TEMPERATURE_PORT, HOST, MODE
 
 # ===================================================
 #       HTTP ENDPOINTS FOR EMBEDDED SYSTEM
@@ -31,70 +27,101 @@ def turn_off():
 
 @app.route("/temperatureData", methods=["POST"])
 def handle_readings():
-    #   data comes in the form
-    # 
-    #   timestamp
-    #   sensor[1/2]:
-    #    - temp?
-    #    - sensor[1/2]Unplugged?
-    #
-    # if this endpoint is reached then the system is turned on
     if request.method == "POST" and MODE != "testing":
-        r.set("systemStatus", "CONNECTED", ex=TIMEOUT_S)                  
+        r.set("systemStatus", "CONNECTED")
 
         data      = request.get_json()
         timestamp = int(data.get("timestamp"))
 
-        print("")
-        print("DATA", data)
-        print("timestamp", timestamp)
+        # process sensors
+        ids = ["1", "2"]
+        perform_toggle:list[bool] = []
+        for id in ids:
 
-        try:
-            temp_c_1 = round_c(data.get("sensor1Temperature"))
+            unplugged = data.get(f"sensor{id}Unplugged")
 
-            if temp_c_1 is not None:
-                temp_c_1 = round_c(data.get("sensor1Temperature"))
-                curr_status_p_1:str = stream_temperature_reading(sensor_id="1", timestamp=timestamp, temperature_c=temp_c_1)
-                toggle_1 = check_button_toggle(sensor_id="1", curr_status_p=curr_status_p_1)
-                # add_reading_to_db(sensor_id="1", timestamp=timestamp, temperature_c=temp_c_1)
+            # sensor plugged in
+            if not unplugged: 
+
+                is_btn_on = data.get(f"sensor{id}Enabled")
+                if is_btn_on:
+                    curr_status_p = "ON"
+                    temp = float(data.get(f"sensor{id}Temperature"))
+                else:
+                    curr_status_p = "OFF"
+                    temp = None
+
+                stream_reading(sensor_id=id, timestamp=timestamp, temperature_c=temp)
+
+                r.set(f"sensor:{id}:unplugged", "false")
+
+                toggle = check_button_toggle(sensor_id=id, curr_status_p=curr_status_p)
+                perform_toggle.append(toggle)
+
+
+                # threshold checks for automated mailing
+                last_three = r.xrevrange(f"readings:{id}", "+", "-", count=3)
+                temps = get_temps(last_three=last_three)
+
+                # LOW TEMPERATURE READINGS
+                timeout_l = r.get("timeout_l")                     # simple timer because this endpoint gets hit every 1 sec
+                timeout_l = int(timeout_l) if timeout_l is not None else 0
+                if (timeout_l <= 0):
+                    max_min_thresh = r.get("maxMinThresh")
+                    if hits_thresh_low(temps=temps, max_min_thresh=max_min_thresh):
+                        users_df = r.get("users_df")
+                        celery_client.send_task(
+                            "email_min_thresh", 
+                            kwargs={
+                                "sensor_id": id,
+                                "df": users_df,
+                                "last_three_list": temps,
+                            }
+                        )
+                        r.set("timeout_l", 10)
+                else:
+                    r.set("timeout_l", timeout_l-1)
+                    
+                # HOT TEMPERATURE READINGS
+                timeout_h = r.get("timeout_h")
+                timeout_h = int(timeout_h) if timeout_h is not None else 0
+                if (timeout_h <= 0):
+                    min_max_thresh = r.get("minMaxThresh")
+                    if hits_thresh_high(temps=temps, min_max_thresh=min_max_thresh):
+                        users_df = r.get("users_df")
+                        celery_client.send_task(
+                            "email_max_thresh", 
+                            kwargs={
+                                "sensor_id": id,
+                                "df": users_df,
+                                "last_three_list": temps,
+                            }
+                        )
+                        r.set("timeout_h", 10)
+                else:
+                    r.set("timeout_h", timeout_h-1)
+
+            # sensor unplugged 
             else:
-                r.set(f"virtual:1:status", "UNPLUGGED")
-                toggle_1 = False
-        except Exception as e:
-            print("EXCEPTION SENSOR 1", e)
-            toggle_1 = False
+                r.set(f"sensor:{id}:unplugged", "true")
+                perform_toggle.append(False)
 
-        try:
-            temp_c_2 = round_c(data.get("sensor2Temperature"))
-
-            if temp_c_2 is not None:
-                temp_c_2 = round_c(data.get("sensor2Temperature"))
-                curr_status_p_2:str = stream_temperature_reading(sensor_id="2", timestamp=timestamp, temperature_c=temp_c_2)
-                toggle_2 = check_button_toggle(sensor_id="2", curr_status_p=curr_status_p_2)
-                # add_reading_to_db(sensor_id="2", timestamp=timestamp, temperature_c=temp_c_2)
-            else:
-                r.set(f"virtual:2:status", "UNPLUGGED")
-                toggle_2 = False
-        except Exception as e:
-            print("EXCEPTION SENSOR 2", e)
-            toggle_2 = False
-
-        perform_virtual_unit_toggle  = check_unit_toggle()
+        # check for unit change virtualization
+        unit = get_unit()
+        print("UNIT", unit)
 
         # check the maximum floor thresh and minimum top thresh to see if there is a hit
-        # last_three = r.revxrange(f"readings:{sensor_id}", "+", "-", count=3)
         # json_df = r.get("users_df")
         # check_thresh(last_three=last_three, sensor_id=sensor_id, df=df)
 
         response = jsonify(
             [
-                "C",
-                toggle_1,
-                toggle_2,
+                unit,
+                perform_toggle[0],
+                perform_toggle[1],
             ]
         )
     else:
-        # no change to physical device
         response = jsonify(
             [
                 "C", 
