@@ -1,5 +1,5 @@
 FROM python:3.12-slim-bookworm
-WORKDIR /dummy_redis_stream_writer
+WORKDIR /stream_writer
 
 COPY requirements.txt .
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -7,5 +7,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY src ./src
-CMD ["python", "-u", "-m", "src.server"]
-# CMD ["python", "src/server.py"]
+# CMD ["python", "-u", "-m", "src.server"]
+CMD ["python", "-m", "src.server"]
