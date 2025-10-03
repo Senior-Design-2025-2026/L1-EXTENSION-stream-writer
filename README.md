@@ -1,3 +1,5 @@
+[Return to ECE-Senior-Design-Lab-1-EXTENSION -->](https://github.com/Senior-Design-2025-2026/ECE-Senior-Design-Lab-1-EXTENSION/tree/main)
+
 # L1-EXTENSION-stream-writer
 Flask server to receive and stream physical temperature readings to web server. Designed to decouple dashboard web application and physical embedded system. 
 
